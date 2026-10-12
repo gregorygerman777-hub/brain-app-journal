@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal</title>
+<style>
+:root{--bg:#0e0c0b;--panel:#171412;--line:#2a2420;--text:#e8e0d5;--muted:#8a7d6e;--accent:#c9a96e;--ok:#7fc99c;--err:#e07a6a}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f7f3ec;--panel:#fffdf9;--line:#e2d9cc;--text:#2a2420;--muted:#7a6d5e;--accent:#8a6a2e;--ok:#2f7d4f;--err:#b5452f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:24px;margin:0 0 8px;font-weight:600}
+p.lead{color:var(--muted);margin:0 0 24px}
+label{display:block;font-size:13px;color:var(--muted);margin:16px 0 8px}
+input,select,textarea{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit}
+textarea{min-height:160px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
+button{background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer}
+button.primary{background:var(--accent);color:var(--bg)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-top:16px}
+.status{font-size:13px;color:var(--muted);min-height:24px;margin-top:8px}
+.status.ok{color:var(--ok)}.status.err{color:var(--err)}
+.out{white-space:pre-wrap}
+.sources{font-size:13px;color:var(--muted);margin-top:8px}
+ul.plain{list-style:none;padding:0;margin:0}
+ul.plain li{border-top:1px solid var(--line);padding:8px 0}
+.muted{color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<main>
+<h1>Journal</h1>
+<p class="lead">One entry a day. Saved entries go into your brain's memory so you can ask about them later.</p>
+<label for="mood">How was today?</label>
+<select id="mood"><option value="">Skip</option><option>Great</option><option>Good</option><option>Okay</option><option>Rough</option></select>
+<label for="entry">Entry</label>
+<textarea id="entry" placeholder="What happened, what you noticed, what's next"></textarea>
+<div class="row"><button class="primary" id="save">Save entry</button><span class="muted" id="count">0 words</span></div>
+<div class="status" id="status"></div>
+<div class="card"><strong>Saved entries</strong><ul class="plain" id="list"></ul></div>
+</main>
+<script>
+const Brain = (() => {
+  let n = 0;
+  const pending = new Map();
+  addEventListener('message', (e) => {
+    if (e.origin !== location.origin) return;
+    const m = e.data;
+    if (!m || m.type !== 'reply' || !pending.has(m.request_id)) return;
+    const { resolve, reject } = pending.get(m.request_id);
+    pending.delete(m.request_id);
+    m.ok ? resolve(m.result) : reject(m.error || { code: 'unknown' });
+  });
+  function call(type, payload) {
+    return new Promise((resolve, reject) => {
+      if (window.parent === window) {
+        reject({ code: 'no_host', detail: 'Open this app from your brain to use it.' });
+        return;
+      }
+      const id = 'r' + (++n) + '-' + Date.now();
+      pending.set(id, { resolve, reject });
+      window.parent.postMessage({ type, payload, request_id: id }, location.origin);
+    });
+  }
+  return {
+    ask: (messages, max_tokens) => call('llm.complete', max_tokens ? { messages, max_tokens } : { messages }),
+    remember: (layer, content, metadata) => call('memory.write', { layer, content, metadata: metadata || {} }),
+    info: () => call('meta.brain_info'),
+  };
+})();
+function errText(e) {
+  if (!e) return 'Something went wrong.';
+  if (e.detail && typeof e.detail === 'string') return e.detail;
+  return e.code ? 'Error: ' + e.code : String(e);
+}
+function setStatus(el, text, kind) { el.textContent = text; el.className = 'status' + (kind ? ' ' + kind : ''); }
+function store(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
+function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function showSources(el, sources) {
+  if (!sources || !sources.length) { el.textContent = ''; return; }
+  const names = sources.map((s) => s.title || s.doc_name || s.source || s.document || JSON.stringify(s)).slice(0, 8);
+  el.textContent = 'Sources: ' + names.join(', ');
+}
+const $ = (id) => document.getElementById(id);
+const KEY = 'journal.entries';
+const today = () => new Date().toISOString().slice(0, 10);
+$('entry').value = store('journal.draft', '');
+const words = (s) => (s.trim().match(/\S+/g) || []).length;
+function render() {
+  const items = store(KEY, []);
+  $('list').innerHTML = items.length
+    ? items.slice().reverse().map((x) => `<li><span class="muted">${esc(x.date)}${x.mood ? ' · ' + esc(x.mood) : ''}</span><div>${esc(x.text)}</div></li>`).join('')
+    : '<li class="muted">Nothing saved yet.</li>';
+}
+$('entry').addEventListener('input', () => { $('count').textContent = words($('entry').value) + ' words'; save('journal.draft', $('entry').value); });
+$('count').textContent = words($('entry').value) + ' words';
+$('save').addEventListener('click', async () => {
+  const text = $('entry').value.trim();
+  if (!text) { setStatus($('status'), 'Write something first.', 'err'); return; }
+  const mood = $('mood').value;
+  $('save').disabled = true; setStatus($('status'), 'Saving...');
+  try {
+    const content = `Journal entry, ${today()}${mood ? ' (mood: ' + mood + ')' : ''}\n\n${text}`;
+    await Brain.remember('episodic', content, { app: 'journal', date: today(), mood });
+    const items = store(KEY, []); items.push({ date: today(), mood, text }); save(KEY, items.slice(-50));
+    $('entry').value = ''; save('journal.draft', ''); $('count').textContent = '0 words';
+    setStatus($('status'), 'Saved to memory.', 'ok'); render();
+  } catch (e) { setStatus($('status'), errText(e), 'err'); }
+  $('save').disabled = false;
+});
+render();
+</script>
+</body>
+</html>

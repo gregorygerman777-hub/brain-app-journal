@@ -1,0 +1,22 @@
+dialect: brain-app/v1
+id: journal
+name: Journal
+version: 0.1.0
+description: "Write a short daily entry and keep it in your brain's memory."
+license: MIT
+author:
+  name: Gregory German
+  contact: gregorygerman777@gmail.com
+  url: https://github.com/gregorygerman777-hub
+repo: https://github.com/gregorygerman777-hub/brain-app-journal
+tab:
+  label: Journal
+  route: /journal
+  order: 110
+entries:
+  ui_bundle: dist
+requires_layers:
+  - layer: episodic
+    mode: append
+permissions:
+  - memory.write
