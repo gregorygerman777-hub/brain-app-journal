@@ -46,7 +46,7 @@ th,td{text-align:left;padding:8px;border-top:1px solid var(--border)}
 <label for="entry">Entry</label>
 <textarea id="entry" placeholder="What happened, what you noticed, what's next"></textarea>
 <div class="row"><button class="primary" id="save">Save entry</button><span class="muted" id="count">0 words</span></div>
-<div class="status" id="status"></div>
+<div class="status" id="status" role="status" aria-live="polite"></div>
 <div class="card"><strong>Saved entries</strong><ul class="plain" id="list"></ul></div>
 </main>
 <script>
