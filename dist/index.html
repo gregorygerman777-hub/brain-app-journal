@@ -118,8 +118,9 @@ function showSources(el, sources) {
   el.textContent = 'Sources: ' + names.join(', ');
 }
 const $ = (id) => document.getElementById(id);
+const localDate = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const KEY = 'journal.entries';
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDate();
 $('entry').value = store('journal.draft', '');
 const words = (s) => (s.trim().match(/\S+/g) || []).length;
 function render() {
